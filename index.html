@@ -567,6 +567,8 @@
     const wsPort = Number('__WS_PORT__');
     const typeTimers = new WeakMap();
     const historyCache = new Map();
+    const authQuery = new URLSearchParams(window.location.search);
+    const authSuffix = authQuery.toString() ? `?${authQuery.toString()}` : '';
     const historyRequests = new Map();
     const stateLabels = {
       idle: 'IDLE',
@@ -772,7 +774,10 @@
         return historyRequests.get(agentId);
       }
 
-      const request = fetch(`/api/history?agentId=${encodeURIComponent(agentId)}&limit=100`, { cache: 'no-store' })
+      const query = new URLSearchParams(authQuery);
+      query.set('agentId', agentId);
+      query.set('limit', '100');
+      const request = fetch(`/api/history?${query.toString()}`, { cache: 'no-store' })
         .then(async response => {
           if (!response.ok) {
             throw new Error(`history request failed: ${response.status}`);
@@ -894,7 +899,7 @@
 
     async function loadSnapshot() {
       try {
-        const response = await fetch('/api/agents', { cache: 'no-store' });
+        const response = await fetch(`/api/agents${authSuffix}`, { cache: 'no-store' });
         const data = await response.json();
         renderAgents(data.agents || []);
         setStatus(`已连接 · ${data.agents?.length || 0} 个 agent`);
@@ -907,7 +912,7 @@
 
     function connectSocket() {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      const socket = new WebSocket(`${protocol}://${location.hostname}:${wsPort}/ws`);
+      const socket = new WebSocket(`${protocol}://${location.hostname}:${wsPort}/ws${authSuffix}`);
 
       socket.onopen = () => {
         setStatus('WebSocket 已连接');

@@ -14,6 +14,7 @@ OpenClaw Agent Monitor（`ocam`）是一个轻量的本地 Agent 状态看板，
 - 安装目录：`/opt/ocam`
 - HTTP 端口：`7654`
 - WebSocket 端口：`7655`
+- OpenClaw 配置文件路径变量：`OPENCLAW_CONFIG_PATH`
 
 ## 功能
 
@@ -45,6 +46,19 @@ python3 server.py
 ```text
 http://127.0.0.1:7654
 ```
+
+页面访问会强制校验 token。服务端会从 OpenClaw 配置文件中的 `gateway.auth.token` 读取访问令牌，默认配置文件路径为当前用户目录下的 `.openclaw/openclaw.json`。
+
+浏览器访问时必须携带 `token` 参数：
+
+```text
+http://127.0.0.1:7654/?token=your-token
+```
+
+如果没有 token、token 不匹配、或者服务端未读到配置文件中的 token，页面会居中显示“无法登录”，并提示：
+- 访问示例：`?token=<OpenClaw的认证token>`
+- 该 token 来自 OpenClaw 配置文件中网关的 token
+- 如果 OpenClaw 配置文件不在默认路径，请修改 `server.py` 脚本中的 `OPENCLAW_CONFIG_PATH`
 
 ## 状态上报
 

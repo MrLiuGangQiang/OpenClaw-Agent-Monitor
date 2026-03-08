@@ -26,6 +26,8 @@ ASSETS_DIR = BASE_DIR / 'assets'
 HOST = os.environ.get('OPENCLAW_AGENT_BOARD_HOST', '0.0.0.0')
 HTTP_PORT = int(os.environ.get('OPENCLAW_AGENT_BOARD_PORT', '7654'))
 WS_PORT = int(os.environ.get('OPENCLAW_AGENT_BOARD_WS_PORT', '7655'))
+# 默认从当前用户目录读取 OpenClaw 配置文件；如有特殊部署，可直接修改这里。
+OPENCLAW_CONFIG_PATH = Path.home() / '.openclaw' / 'openclaw.json'
 
 VALID_STATES = {'idle', 'writing', 'researching', 'executing', 'syncing', 'error'}
 DEFAULT_TASK_TITLE = 'Idle'
@@ -65,6 +67,112 @@ def normalize_state(value, fallback: str = 'idle') -> str:
     if raw in VALID_STATES:
         return raw
     return fallback
+
+
+def load_access_token() -> str:
+    # 从 OpenClaw 配置文件读取 gateway.auth.token 作为访问令牌。
+    try:
+        data = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding='utf-8'))
+    except Exception:
+        return ''
+    if not isinstance(data, dict):
+        return ''
+    gateway = data.get('gateway')
+    if not isinstance(gateway, dict):
+        return ''
+    auth = gateway.get('auth')
+    if not isinstance(auth, dict):
+        return ''
+    return clean_text(auth.get('token'), '')
+
+
+def is_authorized(token: str) -> bool:
+    expected_token = load_access_token()
+    if not expected_token:
+        return False
+    return clean_text(token) == expected_token
+
+
+def request_token_from_path(request_path: str) -> str:
+    parsed = urlparse(request_path)
+    return clean_text((parse_qs(parsed.query).get('token') or [''])[0])
+
+
+def unauthorized_response(path: str):
+    if path in ('/', '/index.html'):
+        body = '''<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>无法登录</title>
+  <style>
+    :root {
+      --bg: #07111d;
+      --card-bg: rgba(12, 20, 32, .92);
+      --card-border: rgba(255, 255, 255, .08);
+      --text: #e6f0fb;
+      --muted: #9fb3c8;
+      --code-bg: rgba(92, 220, 255, .10);
+      --code-text: #8fe7ff;
+      --shadow: 0 24px 60px rgba(0, 0, 0, .36);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 18% 20%, rgba(92, 220, 255, .12), transparent 26%),
+        radial-gradient(circle at 82% 18%, rgba(122, 125, 255, .16), transparent 24%),
+        linear-gradient(180deg, #03060d 0%, var(--bg) 100%);
+      color: var(--text);
+      font-family: "SF Pro Display", "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .card {
+      width: min(760px, calc(100vw - 32px));
+      padding: 34px 30px;
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      background: var(--card-bg);
+      box-shadow: var(--shadow);
+      text-align: center;
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      margin: 0 0 18px;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: .4px;
+    }
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.95;
+    }
+    code {
+      padding: 3px 8px;
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      word-break: break-all;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>无法登录</h1>
+    <p class="hint">访问示例：<code>?token=&lt;OpenClaw的认证token&gt;</code><br>该 token 来自 OpenClaw 配置文件中网关的 token。<br>如果 OpenClaw 配置文件不在默认路径，请修改 <code>server.py</code> 脚本中的 <code>OPENCLAW_CONFIG_PATH</code>。</p>
+  </section>
+</body>
+</html>'''
+        return 401, body, 'text/html; charset=utf-8'
+    return 401, json.dumps({'ok': False, 'error': 'unauthorized'}, ensure_ascii=False), 'application/json; charset=utf-8'
 
 
 def clamp_history_limit(value) -> int:
@@ -342,6 +450,14 @@ def extract_websocket_key(handshake: str) -> str:
 def websocket_client_loop(conn: socket.socket) -> None:
     try:
         handshake = conn.recv(4096).decode('utf-8', errors='ignore')
+        request_line = handshake.split('\r\n', 1)[0]
+        parts = request_line.split(' ')
+        request_path = parts[1] if len(parts) >= 2 else '/'
+        if not is_authorized(request_token_from_path(request_path)):
+            conn.sendall(b'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n')
+            conn.close()
+            return
+
         websocket_key = extract_websocket_key(handshake)
         if not websocket_key:
             conn.close()
@@ -420,6 +536,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        if path.startswith('/api/') or path in ('/', '/index.html'):
+            if not is_authorized((parse_qs(parsed.query).get('token') or [''])[0]):
+                code, body, content_type = unauthorized_response(path)
+                return self.send_body(code, body, content_type)
         if path == '/api/agents':
             return self.send_body(200, payload_text())
         if path == '/api/history':
