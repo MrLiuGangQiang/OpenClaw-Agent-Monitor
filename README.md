@@ -86,7 +86,7 @@ python3 push.py idle "等待任务..." --agent-id coding
 直接把下面这个发给OpenClaw就可自动安装
 
 ```
-请按照这个 SKILL.md 帮我完成 ocam 的部署：
+请按照这个 SKILL.md 帮我完成 ocam 的安装或者更新：
 https://github.com/MrLiuGangQiang/OpenClaw-Agent-Monitor/blob/main/SKILL.md
 ```
 
