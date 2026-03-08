@@ -26,8 +26,8 @@ ASSETS_DIR = BASE_DIR / 'assets'
 HOST = os.environ.get('OPENCLAW_AGENT_BOARD_HOST', '0.0.0.0')
 HTTP_PORT = int(os.environ.get('OPENCLAW_AGENT_BOARD_PORT', '7654'))
 WS_PORT = int(os.environ.get('OPENCLAW_AGENT_BOARD_WS_PORT', '7655'))
-# 默认从当前用户目录读取 OpenClaw 配置文件；如有特殊部署，可直接修改这里。
-OPENCLAW_CONFIG_PATH = Path.home() / '.openclaw' / 'openclaw.json'
+# Windows 下默认读取当前用户目录，Linux 下默认读取 /root；如有特殊部署，可直接修改这里。
+OPENCLAW_CONFIG_PATH = (Path.home() if os.name == 'nt' else Path('/root')) / '.openclaw' / 'openclaw.json'
 
 VALID_STATES = {'idle', 'writing', 'researching', 'executing', 'syncing', 'error'}
 DEFAULT_TASK_TITLE = 'Idle'
@@ -98,16 +98,30 @@ def request_token_from_path(request_path: str) -> str:
     return clean_text((parse_qs(parsed.query).get('token') or [''])[0])
 
 
-def unauthorized_response(path: str):
+def mask_secret(value: str) -> str:
+    text = clean_text(value)
+    if not text:
+        return '(空)'
+    if len(text) <= 6:
+        return '*' * len(text)
+    return f'{text[:3]}***{text[-3:]}'
+
+
+def unauthorized_response(request_path: str):
+    parsed = urlparse(request_path)
+    path = parsed.path
     if path in ('/', '/index.html'):
-        body = '''<!doctype html>
+        config_path = str(OPENCLAW_CONFIG_PATH)
+        config_exists = '是' if OPENCLAW_CONFIG_PATH.exists() else '否'
+        request_token = request_token_from_path(request_path)
+        body = f'''<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>无法登录</title>
   <style>
-    :root {
+    :root {{
       --bg: #07111d;
       --card-bg: rgba(12, 20, 32, .92);
       --card-border: rgba(255, 255, 255, .08);
@@ -116,9 +130,9 @@ def unauthorized_response(path: str):
       --code-bg: rgba(92, 220, 255, .10);
       --code-text: #8fe7ff;
       --shadow: 0 24px 60px rgba(0, 0, 0, .36);
-    }
-    * { box-sizing: border-box; }
-    body {
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
       margin: 0;
       min-height: 100vh;
       display: flex;
@@ -131,43 +145,67 @@ def unauthorized_response(path: str):
         linear-gradient(180deg, #03060d 0%, var(--bg) 100%);
       color: var(--text);
       font-family: "SF Pro Display", "Segoe UI", "Microsoft YaHei", sans-serif;
-    }
-    .card {
-      width: min(760px, calc(100vw - 32px));
+    }}
+    .card {{
+      width: min(860px, calc(100vw - 32px));
       padding: 34px 30px;
       border: 1px solid var(--card-border);
       border-radius: 18px;
       background: var(--card-bg);
       box-shadow: var(--shadow);
-      text-align: center;
       backdrop-filter: blur(10px);
-    }
-    h1 {
+    }}
+    h1 {{
       margin: 0 0 18px;
       font-size: 30px;
       font-weight: 800;
       letter-spacing: .4px;
-    }
-    .hint {
-      margin: 0;
+      text-align: center;
+    }}
+    .details {{
+      margin-top: 18px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .03);
+    }}
+    .row {{
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, .06);
+    }}
+    .row:last-child {{ border-bottom: 0; }}
+    .label {{
       color: var(--muted);
-      font-size: 15px;
-      line-height: 1.95;
-    }
-    code {
+      font-size: 14px;
+    }}
+    .value {{
+      min-width: 0;
+      font-size: 14px;
+      line-height: 1.8;
+    }}
+    code {{
       padding: 3px 8px;
       border-radius: 8px;
       background: var(--code-bg);
       color: var(--code-text);
       word-break: break-all;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
+    }}
   </style>
 </head>
 <body>
   <section class="card">
     <h1>无法登录</h1>
-    <p class="hint">访问示例：<code>?token=&lt;OpenClaw的认证token&gt;</code><br>该 token 来自 OpenClaw 配置文件中网关的 token。<br>如果 OpenClaw 配置文件不在默认路径，请修改 <code>server.py</code> 脚本中的 <code>OPENCLAW_CONFIG_PATH</code>。</p>
+    <div class="details">
+      <div class="row"><div class="label">OPENCLAW_CONFIG_PATH</div><div class="value"><code>{config_path}</code></div></div>
+      <div class="row"><div class="label">配置文件存在</div><div class="value"><code>{config_exists}</code></div></div>
+      <div class="row"><div class="label">请求里的 token</div><div class="value"><code>{mask_secret(request_token)}</code></div></div>
+      <div class="row"><div class="label">说明</div><div class="value">访问示例：<code>?token=&lt;OpenClaw 配置里的 gateway.auth.token&gt;</code><br>如果 <code>OPENCLAW_CONFIG_PATH</code> 路径不存在，请在 <code>server.py</code> 中自行配置。</div></div>
+    </div>
   </section>
 </body>
 </html>'''
@@ -538,7 +576,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if path.startswith('/api/') or path in ('/', '/index.html'):
             if not is_authorized((parse_qs(parsed.query).get('token') or [''])[0]):
-                code, body, content_type = unauthorized_response(path)
+                code, body, content_type = unauthorized_response(self.path)
                 return self.send_body(code, body, content_type)
         if path == '/api/agents':
             return self.send_body(200, payload_text())
