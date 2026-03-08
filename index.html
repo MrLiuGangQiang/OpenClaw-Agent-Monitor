@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="assets/openclaw.svg">
+  <title>OpenClaw Agent Monitor</title>
+  <style>
+    :root {
+      --line: #233043;
+      --text: #dbe7f5;
+      --muted: #7f93aa;
+      --idle: #7f8ea3;
+      --writing: #4fc3f7;
+      --researching: #7dd3fc;
+      --executing: #33d17a;
+      --syncing: #f6c344;
+      --error: #ff6b6b;
+      --shadow: 0 16px 42px rgba(0, 0, 0, .30);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 12px;
+      overflow-x: hidden;
+      color: var(--text);
+      font-family: "SF Pro Rounded", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+      background:
+        radial-gradient(circle at 10% 16%, rgba(92, 220, 255, .22), transparent 24%),
+        radial-gradient(circle at 84% 12%, rgba(122, 125, 255, .28), transparent 24%),
+        radial-gradient(circle at 78% 78%, rgba(217, 107, 255, .20), transparent 26%),
+        linear-gradient(180deg, #03060d 0%, #07101c 42%, #091324 100%);
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: .2px;
+      background: linear-gradient(90deg, #ff5f6d, #ffc371, #7cf29c, #5cdcff, #7a7dff, #d96bff, #ff5f6d);
+      background-size: 320% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: rainbow-title 9s linear infinite;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(12, 20, 32, .95);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .02), 0 0 18px rgba(92, 220, 255, .06);
+    }
+
+    .badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--executing);
+      box-shadow: 0 0 8px rgba(51, 209, 122, .75);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .term {
+      display: flex;
+      flex-direction: column;
+      min-height: 236px;
+      border: 1px solid rgba(255, 255, 255, .06);
+      border-radius: 10px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(15, 23, 34, .98), rgba(11, 18, 32, .96));
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .03);
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+
+    .term:hover {
+      transform: translateY(-1px);
+      border-color: rgba(92, 220, 255, .28);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .03), 0 0 24px rgba(92, 220, 255, .06);
+    }
+
+    .term-head {
+      padding: 12px 12px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, .06);
+      background: linear-gradient(180deg, rgba(17, 28, 42, .92), rgba(11, 18, 31, .88));
+    }
+
+    .term[data-state="idle"] {
+      border-color: rgba(127, 142, 163, .22);
+    }
+
+    .term[data-state="writing"] {
+      border-color: rgba(79, 195, 247, .30);
+    }
+
+    .term[data-state="researching"] {
+      border-color: rgba(125, 211, 252, .28);
+    }
+
+    .term[data-state="executing"] {
+      border-color: rgba(51, 209, 122, .30);
+    }
+
+    .term[data-state="syncing"] {
+      border-color: rgba(246, 195, 68, .30);
+    }
+
+    .term[data-state="error"] {
+      border-color: rgba(255, 107, 107, .34);
+    }
+
+    .head-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .head-main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .history-button {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: 999px;
+      background: linear-gradient(180deg, rgba(18, 31, 48, .92), rgba(10, 18, 30, .88));
+      color: #aebfd8;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 0 0 rgba(92, 220, 255, 0);
+      transition: color .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+
+    .history-button:hover,
+    .history-button.active {
+      color: #ecfbff;
+      border-color: rgba(92, 220, 255, .28);
+      background: linear-gradient(180deg, rgba(22, 40, 60, .96), rgba(10, 19, 31, .92));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 0 18px rgba(92, 220, 255, .12), 0 0 30px rgba(217, 107, 255, .06);
+      transform: translateY(-1px);
+    }
+
+    .history-button svg {
+      width: 15px;
+      height: 15px;
+      display: block;
+      filter: drop-shadow(0 0 8px rgba(92, 220, 255, .14));
+    }
+
+    .agent-name {
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .status-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .status-text::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .status-text.idle { color: var(--idle); }
+    .status-text.writing { color: var(--writing); }
+    .status-text.researching { color: var(--researching); }
+    .status-text.executing { color: var(--executing); }
+    .status-text.syncing { color: var(--syncing); }
+    .status-text.error { color: var(--error); }
+
+    .term-body {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      line-height: 1.6;
+      font-size: 13px;
+      color: var(--text);
+      word-break: break-word;
+      background: linear-gradient(180deg, rgba(15, 24, 35, .38), rgba(10, 16, 28, .20));
+    }
+
+    .term-body::-webkit-scrollbar,
+    .history-modal-list::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .term-body::-webkit-scrollbar-thumb,
+    .history-modal-list::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: rgba(92, 220, 255, .16);
+    }
+
+    .task-content.typing::after {
+      content: "\258B";
+      margin-left: 2px;
+      color: var(--writing);
+      animation: blink 1s step-end infinite;
+    }
+
+    .md p {
+      margin: 0 0 10px;
+    }
+
+    .md p:last-child {
+      margin-bottom: 0;
+    }
+
+    .md code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(127, 216, 255, .12);
+      color: #9ee6ff;
+      font-size: 12px;
+    }
+
+    .md pre {
+      margin: 0 0 10px;
+      padding: 10px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(8, 20, 34, .92);
+    }
+
+    .md pre code {
+      display: block;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    .md strong {
+      color: #fff;
+    }
+
+    .empty {
+      padding: 48px 24px;
+      border: 1px dashed var(--line);
+      border-radius: 14px;
+      text-align: center;
+      color: var(--muted);
+      background: rgba(15, 24, 35, .82);
+    }
+
+    .history-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 30;
+    }
+
+    .history-modal.open {
+      display: flex;
+      animation: modal-fade-in .22s ease;
+    }
+
+    .history-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(4, 10, 18, .58);
+      backdrop-filter: blur(14px) saturate(135%);
+    }
+
+    .history-modal-card {
+      position: relative;
+      width: min(920px, 100%);
+      max-height: min(82vh, 780px);
+      display: flex;
+      flex-direction: column;
+      border: 1px solid rgba(255, 255, 255, .10);
+      border-radius: 14px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(14, 22, 34, .88), rgba(8, 14, 26, .80));
+      box-shadow: 0 28px 80px rgba(0, 0, 0, .48), 0 0 42px rgba(92, 220, 255, .08);
+      backdrop-filter: blur(18px) saturate(135%);
+      animation: modal-float-in .24s ease;
+    }
+
+    .history-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, .07);
+      background: linear-gradient(180deg, rgba(20, 31, 48, .58), rgba(15, 24, 38, .38));
+    }
+
+    .history-modal-title {
+      font-size: 16px;
+      font-weight: 900;
+      color: #f4fbff;
+      letter-spacing: .2px;
+    }
+
+    .history-modal-subtitle {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: .35px;
+    }
+
+    .history-modal-close {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .04);
+      color: #c6d7ec;
+      cursor: pointer;
+      transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+    }
+
+    .history-modal-close:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, .08);
+      border-color: rgba(92, 220, 255, .20);
+      transform: translateY(-1px);
+    }
+
+    .history-modal-list {
+      padding: 18px 20px 20px;
+      overflow-y: auto;
+      background: linear-gradient(180deg, rgba(255, 255, 255, .015), transparent 16%);
+    }
+
+    .history-modal-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, .06);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, .02));
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.72;
+      word-break: break-word;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+      transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
+    }
+
+    .history-modal-item:hover {
+      transform: translateY(-1px);
+      border-color: rgba(92, 220, 255, .16);
+      background: linear-gradient(180deg, rgba(92, 220, 255, .06), rgba(255, 255, 255, .025));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 0 22px rgba(92, 220, 255, .05);
+    }
+
+    .history-modal-item + .history-modal-item {
+      margin-top: 10px;
+    }
+
+    .history-state {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 76px;
+      padding: 3px 8px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .03);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .history-state.idle { color: var(--idle); }
+    .history-state.writing { color: var(--writing); }
+    .history-state.researching { color: var(--researching); }
+    .history-state.executing { color: var(--executing); }
+    .history-state.syncing { color: var(--syncing); }
+    .history-state.error { color: var(--error); }
+
+    .history-text {
+      min-width: 0;
+      flex: 1;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .history-modal-placeholder {
+      padding: 18px;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed rgba(255, 255, 255, .09);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(255, 255, 255, .015));
+    }
+
+    .history-modal-orbs {
+      display: none;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    @keyframes modal-fade-in {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes modal-float-in {
+      from {
+        opacity: 0;
+        transform: translateY(10px) scale(.985);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes rainbow-title {
+      from {
+        background-position: 0% 50%;
+      }
+
+      to {
+        background-position: 320% 50%;
+      }
+    }
+
+    @media (max-width: 1080px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 10px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .history-modal {
+        padding: 12px;
+      }
+
+      .history-modal-card {
+        max-height: 86vh;
+      }
+
+      .history-modal-item {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div>
+        <div class="title">OpenClaw Agent Monitor</div>
+      </div>
+      <div class="badge" id="updated">正在连接...</div>
+    </header>
+
+    <main class="grid" id="grid">
+      <div class="empty">正在加载 agent 状态...</div>
+    </main>
+  </div>
+
+  <div class="history-modal" id="historyModal" aria-hidden="true">
+    <div class="history-modal-backdrop" id="historyModalBackdrop"></div>
+    <section class="history-modal-card" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+      <div class="history-modal-orbs" aria-hidden="true"></div>
+      <header class="history-modal-head">
+        <div>
+          <div class="history-modal-title" id="historyModalTitle">历史任务</div>
+          <div class="history-modal-subtitle" id="historyModalSubtitle">最近 100 条记录</div>
+        </div>
+        <button class="history-modal-close" id="historyModalClose" type="button" aria-label="关闭">×</button>
+      </header>
+      <div class="history-modal-list" id="historyModalList">
+        <div class="history-modal-placeholder">点击某个 agent 前面的图标查看历史。</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const updated = document.getElementById('updated');
+    const historyModal = document.getElementById('historyModal');
+    const historyModalBackdrop = document.getElementById('historyModalBackdrop');
+    const historyModalClose = document.getElementById('historyModalClose');
+    const historyModalTitle = document.getElementById('historyModalTitle');
+    const historyModalSubtitle = document.getElementById('historyModalSubtitle');
+    const historyModalList = document.getElementById('historyModalList');
+    const wsPort = Number('__WS_PORT__');
+    const typeTimers = new WeakMap();
+    const historyCache = new Map();
+    const historyRequests = new Map();
+    const stateLabels = {
+      idle: 'IDLE',
+      writing: 'WRITING',
+      researching: 'RESEARCHING',
+      executing: 'EXECUTING',
+      syncing: 'SYNCING',
+      error: 'ERROR'
+    };
+
+    let openHistoryAgentId = '';
+
+    function escapeHtml(text = '') {
+      return String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+
+    function renderMarkdown(text = '') {
+      let html = escapeHtml(String(text));
+      html = html.replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`);
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\n{2,}/g, '</p><p>');
+      html = html.replace(/\n/g, '<br>');
+      return `<p>${html}</p>`;
+    }
+
+    function normalizeState(state) {
+      return Object.prototype.hasOwnProperty.call(stateLabels, state) ? state : 'idle';
+    }
+
+    function setStatus(text) {
+      updated.textContent = text;
+    }
+
+    function stopTypewriter(element) {
+      const timer = typeTimers.get(element);
+      if (timer) {
+        clearInterval(timer);
+        typeTimers.delete(element);
+      }
+      element.classList.remove('typing');
+    }
+
+    function scrollTaskToBottom(element) {
+      const panel = element.closest('.term-body');
+      if (!panel || panel.dataset.lockBottom === 'false') {
+        return;
+      }
+      panel.scrollTop = panel.scrollHeight;
+    }
+
+    function bindPanelScroll(card) {
+      const panel = card.querySelector('.term-body');
+      if (!panel || panel.dataset.scrollBound === 'true') {
+        return;
+      }
+
+      panel.dataset.scrollBound = 'true';
+      panel.dataset.lockBottom = 'true';
+      panel.addEventListener('scroll', () => {
+        const distance = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
+        panel.dataset.lockBottom = distance <= 8 ? 'true' : 'false';
+      });
+    }
+
+    function restorePanelScroll(card, previousTop = 0) {
+      const panel = card.querySelector('.term-body');
+      if (!panel) {
+        return;
+      }
+
+      if (panel.dataset.lockBottom === 'true') {
+        panel.scrollTop = panel.scrollHeight;
+        return;
+      }
+      panel.scrollTop = previousTop;
+    }
+
+    function typeMarkdown(element, text) {
+      const nextText = String(text || '');
+      if (element.dataset.fulltext === nextText) {
+        return;
+      }
+
+      stopTypewriter(element);
+      element.dataset.fulltext = nextText;
+      element.textContent = '';
+      scrollTaskToBottom(element);
+
+      if (!nextText) {
+        element.innerHTML = '';
+        return;
+      }
+
+      element.classList.add('typing');
+      let index = 0;
+      const step = Math.max(1, Math.ceil(nextText.length / 40));
+      const timer = setInterval(() => {
+        index = Math.min(index + step, nextText.length);
+        element.innerHTML = escapeHtml(nextText.slice(0, index));
+        scrollTaskToBottom(element);
+
+        if (index >= nextText.length) {
+          stopTypewriter(element);
+          element.innerHTML = renderMarkdown(nextText);
+          scrollTaskToBottom(element);
+        }
+      }, 24);
+
+      typeTimers.set(element, timer);
+    }
+
+    function renderHistoryIcon() {
+      return `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 4.25a7.75 7.75 0 1 1-7.1 4.65" stroke="currentColor" stroke-opacity=".95" stroke-width="1.75" stroke-linecap="round"></path>
+          <path d="M4.85 5.1v4.15h4.05" stroke="currentColor" stroke-opacity=".9" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="M12 7.7v4.55l3.25 2.2" stroke="currentColor" stroke-opacity=".95" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+          <circle cx="17.9" cy="6.1" r="1" fill="currentColor" fill-opacity=".95"></circle>
+        </svg>
+      `;
+    }
+
+    function createCard(agent) {
+      const card = document.createElement('section');
+      card.className = 'term';
+      card.dataset.agentId = agent.agentId || '';
+      card.innerHTML = `
+        <div class="term-head">
+          <div class="head-row">
+            <div class="head-main">
+              <button class="history-button" type="button" title="历史任务" aria-label="打开历史任务">${renderHistoryIcon()}</button>
+              <div class="agent-name md"></div>
+            </div>
+            <div class="status-text"></div>
+          </div>
+        </div>
+        <div class="term-body">
+          <div class="task-content md"></div>
+        </div>
+      `;
+
+      card.querySelector('.history-button').addEventListener('click', () => {
+        openHistory(card.dataset.agentId || '');
+      });
+
+      bindPanelScroll(card);
+      return card;
+    }
+
+    function setHistoryButtonState() {
+      Array.from(grid.querySelectorAll('.term')).forEach(card => {
+        const button = card.querySelector('.history-button');
+        if (!button) {
+          return;
+        }
+        button.classList.toggle('active', openHistoryAgentId === card.dataset.agentId && historyModal.classList.contains('open'));
+      });
+    }
+
+    function renderHistoryItems(items = []) {
+      if (!Array.isArray(items) || items.length === 0) {
+        historyModalList.innerHTML = '<div class="history-modal-placeholder">暂无历史任务。</div>';
+        return;
+      }
+
+      historyModalList.innerHTML = items
+        .map(item => {
+          const state = normalizeState(item.state || 'idle');
+          const stateLabel = stateLabels[state];
+          return `<div class="history-modal-item ${state}"><span class="history-state ${state}">${escapeHtml(stateLabel)}</span><span class="history-text">${escapeHtml(item.text || '')}</span></div>`;
+        })
+        .join('');
+    }
+
+    function openHistoryModal(agentId) {
+      openHistoryAgentId = agentId;
+      historyModal.classList.add('open');
+      historyModal.setAttribute('aria-hidden', 'false');
+      historyModalTitle.textContent = `${agentId} · 历史任务`;
+      historyModalSubtitle.textContent = '最近 100 条记录';
+      historyModalList.innerHTML = '<div class="history-modal-placeholder">正在加载历史记录...</div>';
+      document.body.style.overflow = 'hidden';
+      setHistoryButtonState();
+    }
+
+    function closeHistoryModal() {
+      openHistoryAgentId = '';
+      historyModal.classList.remove('open');
+      historyModal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      setHistoryButtonState();
+    }
+
+    async function fetchHistory(agentId, force = false) {
+      if (!agentId) {
+        return [];
+      }
+      if (!force && historyCache.has(agentId)) {
+        return historyCache.get(agentId);
+      }
+      if (historyRequests.has(agentId)) {
+        return historyRequests.get(agentId);
+      }
+
+      const request = fetch(`/api/history?agentId=${encodeURIComponent(agentId)}&limit=100`, { cache: 'no-store' })
+        .then(async response => {
+          if (!response.ok) {
+            throw new Error(`history request failed: ${response.status}`);
+          }
+          const data = await response.json();
+          const items = Array.isArray(data.items) ? data.items : [];
+          historyCache.set(agentId, items);
+          return items;
+        })
+        .finally(() => {
+          historyRequests.delete(agentId);
+        });
+
+      historyRequests.set(agentId, request);
+      return request;
+    }
+
+    async function openHistory(agentId) {
+      if (!agentId) {
+        return;
+      }
+
+      openHistoryModal(agentId);
+      try {
+        const items = await fetchHistory(agentId, true);
+        if (openHistoryAgentId === agentId) {
+          renderHistoryItems(items);
+        }
+      } catch (error) {
+        historyModalList.innerHTML = '<div class="history-modal-placeholder">历史记录加载失败。</div>';
+      }
+    }
+
+    async function refreshOpenHistory(force = false) {
+      if (!openHistoryAgentId || !historyModal.classList.contains('open')) {
+        return;
+      }
+
+      const card = Array.from(grid.querySelectorAll('.term')).find(item => item.dataset.agentId === openHistoryAgentId);
+      if (!card) {
+        closeHistoryModal();
+        return;
+      }
+
+      try {
+        const items = await fetchHistory(openHistoryAgentId, force);
+        if (historyModal.classList.contains('open') && openHistoryAgentId === card.dataset.agentId) {
+          renderHistoryItems(items);
+          setHistoryButtonState();
+        }
+      } catch (error) {
+        historyModalList.innerHTML = '<div class="history-modal-placeholder">历史记录加载失败。</div>';
+      }
+    }
+
+    function updateCard(card, agent) {
+      const state = normalizeState(agent.state || 'idle');
+      const taskTitle = agent.taskTitle || '待命中';
+      const agentName = card.querySelector('.agent-name');
+      const status = card.querySelector('.status-text');
+      const task = card.querySelector('.task-content');
+
+      card.dataset.agentId = agent.agentId || '';
+      card.dataset.state = state;
+      agentName.innerHTML = renderMarkdown(agent.agentId || '');
+      status.textContent = stateLabels[state];
+      status.className = `status-text ${state}`;
+      typeMarkdown(task, taskTitle);
+    }
+
+    function renderAgents(agents) {
+      if (!Array.isArray(agents) || agents.length === 0) {
+        Array.from(grid.querySelectorAll('.task-content')).forEach(stopTypewriter);
+        grid.innerHTML = '<div class="empty">当前没有检测到 agent</div>';
+        closeHistoryModal();
+        return;
+      }
+
+      const existingCards = new Map(
+        Array.from(grid.querySelectorAll('.term')).map(card => [card.dataset.agentId, card])
+      );
+      const previousScrollTops = new Map(
+        Array.from(grid.querySelectorAll('.term')).map(card => {
+          const panel = card.querySelector('.term-body');
+          return [card.dataset.agentId, panel ? panel.scrollTop : 0];
+        })
+      );
+      const orderedCards = [];
+
+      agents.forEach(agent => {
+        const key = String(agent.agentId || '');
+        const card = existingCards.get(key) || createCard(agent);
+        updateCard(card, agent);
+        existingCards.delete(key);
+        orderedCards.push(card);
+      });
+
+      existingCards.forEach(card => {
+        const task = card.querySelector('.task-content');
+        if (task) {
+          stopTypewriter(task);
+        }
+        card.remove();
+      });
+
+      const currentCards = Array.from(grid.children);
+      const sameOrder = currentCards.length === orderedCards.length && currentCards.every((card, index) => card === orderedCards[index]);
+      if (!sameOrder) {
+        grid.replaceChildren(...orderedCards);
+      }
+
+      orderedCards.forEach(card => {
+        bindPanelScroll(card);
+        restorePanelScroll(card, previousScrollTops.get(card.dataset.agentId) || 0);
+      });
+
+      setHistoryButtonState();
+    }
+
+    async function loadSnapshot() {
+      try {
+        const response = await fetch('/api/agents', { cache: 'no-store' });
+        const data = await response.json();
+        renderAgents(data.agents || []);
+        setStatus(`已连接 · ${data.agents?.length || 0} 个 agent`);
+        await refreshOpenHistory(true);
+      } catch (error) {
+        grid.innerHTML = '<div class="empty">初始加载失败</div>';
+        setStatus('连接失败');
+      }
+    }
+
+    function connectSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      const socket = new WebSocket(`${protocol}://${location.hostname}:${wsPort}/ws`);
+
+      socket.onopen = () => {
+        setStatus('WebSocket 已连接');
+        loadSnapshot();
+      };
+
+      socket.onmessage = async event => {
+        try {
+          const data = JSON.parse(event.data);
+          renderAgents(data.agents || []);
+          setStatus(`已连接 · ${data.agents?.length || 0} 个 agent`);
+          await refreshOpenHistory(true);
+        } catch (error) {
+          setStatus('数据解析失败');
+        }
+      };
+
+      socket.onerror = () => {
+        setStatus('WebSocket 出错');
+        socket.close();
+      };
+
+      socket.onclose = () => {
+        setStatus('连接断开，正在重连...');
+        window.setTimeout(connectSocket, 1500);
+      };
+    }
+
+    historyModalBackdrop.addEventListener('click', closeHistoryModal);
+    historyModalClose.addEventListener('click', closeHistoryModal);
+    window.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && historyModal.classList.contains('open')) {
+        closeHistoryModal();
+      }
+    });
+
+    loadSnapshot();
+    connectSocket();
+  </script>
+</body>
+</html>
