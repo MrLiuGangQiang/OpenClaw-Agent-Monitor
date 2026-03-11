@@ -96,9 +96,9 @@ https://github.com/MrLiuGangQiang/OpenClaw-Agent-Monitor/blob/main/SKILL.md
 http://127.0.0.1:7654
 ```
 
-## SOUL.md 配置
+## SOUL.md和AGENTS.md 配置
 
-把下面内容加入 `SOUL.md`：
+把下面内容加入 `SOUL.md`和 `AGENTS.md`：
 
 ```md
 ## OCAM
