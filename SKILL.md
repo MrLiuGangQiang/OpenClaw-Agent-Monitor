@@ -194,7 +194,7 @@ sudo systemctl enable --now ocam
 sudo systemctl --no-pager --full status ocam
 ```
 
-### 7. 配置 `SOUL.md`
+### 7. 配置 `SOUL.md`和 `AGENTS.md`
 
 这是强制步骤，不是可选步骤。
 
