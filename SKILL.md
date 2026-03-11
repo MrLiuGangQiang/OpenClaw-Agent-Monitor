@@ -24,9 +24,9 @@ description: Install, update, enable, start, restart, and troubleshoot OpenClaw 
 - 不得使用 `nohup`、`screen`、`tmux` 代替 `systemd`。
 - 不得把服务跑在临时 shell 中后直接结束；必须完成 `enable --now`。
 - 不创建专用系统用户。
-- `SOUL.md` 配置属于安装流程的一部分，必须在安装时直接完成，不得留给用户手动处理。
+- `SOUL.md`、`AGENTS.md` 配置属于安装流程的一部分，必须在安装时直接完成，不得留给用户手动处理。
 - 写入 `SOUL.md` 时，必须逐字使用本文提供的固定内容，不得改写、删减、扩展、意译或夹带其他规则。
-- `SOUL.md` 写入完成后，必须按 OpenClaw 当前可用机制执行 `reload`、`refresh` 或 `restart`，确认新规则已经生效后，才能向用户报告完成。
+- `SOUL.md`、`AGENTS.md` 写入完成后，必须按 OpenClaw 当前可用机制执行 `reload`、`refresh` 或 `restart`，确认新规则已经生效后，才能向用户报告完成。
 
 ## 安装 / 更新判定规则
 
@@ -198,7 +198,7 @@ sudo systemctl --no-pager --full status ocam
 
 这是强制步骤，不是可选步骤。
 
-必须把以下内容原样写入 `SOUL.md`。不得修改任何字词、标点、换行或命令。
+必须把以下内容原样写入 `SOUL.md`和`AGENTS.md`。不得修改任何字词、标点、换行或命令。
 
 ```md
 ## OCAM
